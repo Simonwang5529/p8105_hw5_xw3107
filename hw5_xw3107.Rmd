@@ -1,0 +1,254 @@
+---
+title: "hw5_xw3107"
+output: github_document
+date: "2025-11-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Problem 1 — The birthday problem
+
+We estimate, by simulation, the probability that a group of size \(n\) (with birthdays i.i.d. Uniform over 365 days, no leap years) has **at least one shared birthday**.
+
+```{r message=FALSE, warning=FALSE}
+# packages
+library(tidyverse)
+library(scales)
+library(knitr)
+
+set.seed(2025)  # reproducibility
+
+# helper function
+same_birthdat = function(n, days = 365) {
+  # sample birthdays with replacement, then check for duplicates
+  bdays = sample.int(days, size = n, replace = TRUE)
+  any(duplicated(bdays))
+}
+
+# simulate
+reps = 10000
+n_grid = 2:50
+
+sim_results =
+  map_dfr(
+    n_grid,
+    \(n) tibble(
+      n = n,
+      # run the Bernoull
+      prob_shared = mean(replicate(reps, same_birthdat(n)))
+    )
+  )
+
+# the smallest n where the probability exceeds 50%
+n_threshold =
+  sim_results |>
+  filter(prob_shared >= 0.5) |>
+  slice_min(n) |>
+  pull(n)
+```
+```{r}
+ggplot(sim_results, aes(x = n, y = prob_shared)) +
+  geom_line(size = 0.9) +
+  geom_point(size = 1.5) +
+  geom_vline(xintercept = n_threshold, linetype = 2) +
+  annotate(
+    "text",
+    x = n_threshold + 1.2,
+    y = 0.52,
+    label = paste0("50% threshold at n = ", n_threshold),
+    hjust = 0
+  ) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+  labs(
+    x = "Group size (n)",
+    y = "Probability of ≥1 shared birthday",
+    title = "Estimated probability of a shared birthday vs. group size",
+    subtitle = paste0("Each point/line based on ", format(reps, big.mark = ","), " simulations per n")
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+```{r}
+sim_results |>
+  filter(n %in% c(2, 10, 20, 23, 30, 40, 50)) |>
+  mutate(prob_shared = percent(prob_shared, accuracy = 0.1)) |>
+  kable(col.names = c("n", "Estimated probability"))
+```
+The probability of at least one shared birthday increases as the group size grows, rising from near zero at small n to nearly 1 when n = 50. Plus, the probability exceeds 50% at only 23 people, illustrating how quickly collisions occur in the birthday problem despite there are 365 days a year.
+
+## Problem 2 — Exploring power in a one-sample t-test
+
+We explore how the **power** of a one-sample *t*-test changes with the true mean \( \mu \), holding the sample size and variance constant.
+
+### Simulation design
+
+1. Generate \( x_i \sim \text{Normal}(\mu, \sigma) \).
+2. Conduct a one-sample *t*-test for \( H_0: \mu = 0 \) at \(\alpha = 0.05\).
+3. Record the sample mean \(\hat{\mu}\) and the *p*-value.
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(broom)
+library(knitr)
+
+set.seed(2025)
+
+# import parameters
+n = 30
+sigma = 5
+mu_values = 0:6
+n_sims = 5000
+
+# helper: run one t-test and tidy output 
+simulate_ttest = function(mu) {
+  x = rnorm(n, mean = mu, sd = sigma)
+  tidy(t.test(x, mu = 0)) |>
+    mutate(mu_hat = mean(x), mu_true = mu)
+}
+
+# run simulation
+sim_results =
+  map_dfr(mu_values, \(m) replicate(n_sims, simulate_ttest(m), simplify = FALSE)) |>
+  bind_rows()
+
+glimpse(sim_results)
+```
+### power analysis
+```{r}
+power_df =
+  sim_results |>
+  group_by(mu_true) |>
+  summarise(power = mean(p.value < 0.05))
+
+ggplot(power_df, aes(x = mu_true, y = power)) +
+  geom_line(size = 0.9, color = "steelblue") +
+  geom_point(size = 2, color = "steelblue") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = "True mean (μ)",
+    y = "Power (P[reject H₀])",
+    title = "Power vs. true mean in a one-sample t-test",
+    subtitle = paste0("n = ", n, ", σ = ", sigma, ", α = 0.05, ", n_sims, " simulations per μ")
+  ) +
+  theme_minimal(base_size = 13)
+```
+As the true mean μ moves  from 0 , the power of the test increases sharply: when μ is close to 0 the test rejects only about 5–15% of the time, but by μ around 3–4 the power is close to 100%. This shows the usual relationship, larger true effects are much easier to detect with fixed n and \sigma.
+
+### Mean estimates and selection bias
+```{r}
+mean_df =
+  sim_results |>
+  group_by(mu_true) |>
+  summarise(
+    mean_all = mean(mu_hat),
+    mean_reject = mean(mu_hat[p.value < 0.05])
+  )
+
+ggplot(mean_df, aes(x = mu_true)) +
+  geom_line(aes(y = mean_all, color = "All samples"), size = 1.1) +
+  geom_line(aes(y = mean_reject, color = "Rejected H₀"), size = 1.1, linetype = 2) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
+  scale_color_manual(values = c("All samples" = "steelblue", "Rejected H₀" = "tomato")) +
+  labs(
+    x = "True mean (μ)",
+    y = "Average estimated mean (μ̂)",
+    color = NULL,
+    title = "Average estimated μ̂ vs. true μ",
+    subtitle = "Dashed gray line: μ̂ = μ (perfect estimation)"
+  ) +
+  theme_minimal(base_size = 13)
+```
+The blue line (all samples) lies almost exactly on the 45° line, indicating that the sample mean \hat{\mu} is an approximately unbiased estimator of μ. The red dashed line (only samples where H_0 is rejected) is above the 45° line for small μ, meaning that among “significant” results the average \hat{\mu} overestimates the true effect; this happens because we are conditioning on rejection, which selects datasets where random noise has pushed \hat{\mu} farther from 0 (a selection or “winner’s curse” bias). As μ gets large and power approaches 1, almost all samples reject, so the red line converges back to the blue line and the bias disappears.
+
+# Problem 3
+
+We analyze the **Washington Post homicide dataset** (50 U.S. cities).  
+The raw data includes variables describing the victim, location, city, state, and case disposition.
+
+### Import and describe the raw data
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(broom)
+
+# read directly from GitHub 
+homicides =
+  read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv") |>
+  clean_names()
+
+glimpse(homicides)
+```
+### We create a city_state variable and compute:
+
+```{r}
+homicides_city =
+  homicides |>
+  mutate(
+    city_state = paste0(city, ", ", state),
+    unsolved = disposition %in% c("Closed without arrest", "Open/No arrest")
+  ) |>
+  group_by(city_state) |>
+  summarise(
+    total = n(),
+    unsolved = sum(unsolved)
+  )
+
+homicides_city |> head()
+```
+
+### Baltimore, Estimate proportion unsolved using prop.test
+```{r}
+baltimore =
+  homicides_city |>
+  filter(city_state == "Baltimore, MD")
+
+balt_prop =
+  prop.test(
+    x = baltimore$unsolved,
+    n = baltimore$total
+  )
+
+balt_tidy =
+  tidy(balt_prop)
+
+balt_tidy |>
+  select(estimate, conf.low, conf.high)
+```
+
+### Now compute proportion + CI for each city
+
+```{r}
+city_results =
+  homicides_city |>
+  mutate(
+    test = map2(unsolved, total, \(x, n) prop.test(x = x, n = n)),
+    test_tidy = map(test, tidy)
+  ) |>
+  unnest(test_tidy) |>
+  select(city_state, total, unsolved, estimate, conf.low, conf.high)
+
+city_results |> head()
+```
+
+### Plot: estimated unsolved proportions + CIs by city
+```{r fig.width = 10, fig.height = 12}
+city_results |>
+  mutate(city_state = fct_reorder(city_state, estimate)) |>
+  ggplot(aes(x = estimate, y = city_state)) +
+  geom_point(color = "steelblue", size = 2) +
+  geom_errorbar(
+    aes(xmin = conf.low, xmax = conf.high),
+    width = 0.2,
+    color = "gray40"
+  ) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = "Estimated proportion unsolved",
+    y = "",
+    title = "Proportion of unsolved homicides by U.S. city",
+    subtitle = "95% confidence intervals from prop.test"
+  ) +
+  theme_minimal(base_size = 13)
+```
