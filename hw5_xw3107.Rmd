@@ -10,10 +10,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Problem 1 — The birthday problem
 
-We estimate, by simulation, the probability that a group of size \(n\) (with birthdays i.i.d. Uniform over 365 days, no leap years) has **at least one shared birthday**.
+We estimate the probability that a group of size \(n\) (with birthdays i.i.d. Uniform over 365 days, no leap years) has **at least one shared birthday**.
 
 ```{r message=FALSE, warning=FALSE}
 # packages
+library(janitor) 
 library(tidyverse)
 library(scales)
 library(knitr)
@@ -36,7 +37,7 @@ sim_results =
     n_grid,
     \(n) tibble(
       n = n,
-      # run the Bernoull
+      # run the Bernoulli
       prob_shared = mean(replicate(reps, same_birthdat(n)))
     )
   )
@@ -78,7 +79,7 @@ sim_results |>
 ```
 The probability of at least one shared birthday increases as the group size grows, rising from near zero at small n to nearly 1 when n = 50. Plus, the probability exceeds 50% at only 23 people, illustrating how quickly collisions occur in the birthday problem despite there are 365 days a year.
 
-## Problem 2 — Exploring power in a one-sample t-test
+## Problem 2
 
 We explore how the **power** of a one-sample *t*-test changes with the true mean \( \mu \), holding the sample size and variance constant.
 
@@ -89,11 +90,8 @@ We explore how the **power** of a one-sample *t*-test changes with the true mean
 3. Record the sample mean \(\hat{\mu}\) and the *p*-value.
 
 ```{r message=FALSE, warning=FALSE}
-library(tidyverse)
 library(broom)
 library(knitr)
-
-set.seed(2025)
 
 # import parameters
 n = 30
@@ -101,7 +99,7 @@ sigma = 5
 mu_values = 0:6
 n_sims = 5000
 
-# helper: run one t-test and tidy output 
+# helper function run one t-test and tidy output 
 simulate_ttest = function(mu) {
   x = rnorm(n, mean = mu, sd = sigma)
   tidy(t.test(x, mu = 0)) |>
@@ -129,7 +127,7 @@ ggplot(power_df, aes(x = mu_true, y = power)) +
   labs(
     x = "True mean (μ)",
     y = "Power (P[reject H₀])",
-    title = "Power vs. true mean in a one-sample t-test",
+    title = "Power vs true mean one-sample t-test",
     subtitle = paste0("n = ", n, ", σ = ", sigma, ", α = 0.05, ", n_sims, " simulations per μ")
   ) +
   theme_minimal(base_size = 13)
@@ -169,8 +167,7 @@ The raw data includes variables describing the victim, location, city, state, an
 
 ### Import and describe the raw data
 ```{r message=FALSE, warning=FALSE}
-library(tidyverse)
-library(janitor)
+
 library(broom)
 
 # read directly from GitHub 
